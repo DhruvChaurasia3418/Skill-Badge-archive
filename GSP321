@@ -154,4 +154,6 @@ for USER in $USERS; do
   fi
 done
 
+kubectl get svc -w
+
 
