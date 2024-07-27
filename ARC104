@@ -1,0 +1,148 @@
+# Define environment variables
+export project=
+export region=
+export function_name=
+export http_function=
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+export bucket="gs://$project"
+
+# Set the Google Cloud project to the specified project ID
+gcloud config set project $project
+
+# Ensure necessary APIs are enabled
+gcloud services enable \
+  artifactregistry.googleapis.com \
+  cloudfunctions.googleapis.com \
+  cloudbuild.googleapis.com \
+  eventarc.googleapis.com \
+  run.googleapis.com \
+  logging.googleapis.com \
+  pubsub.googleapis.com
+
+# Pause to ensure APIs are enabled
+sleep 40
+
+# Retrieve the project number
+project_number=$(gcloud projects list --filter="project_id:$project" --format='value(project_number)')
+
+# Get the service account for Cloud KMS
+service_account=$(gsutil kms serviceaccount -p $project_number)
+
+# Add IAM policy binding for the service account
+gcloud projects add-iam-policy-binding $project \
+  --member serviceAccount:$service_account \
+  --role roles/pubsub.publisher
+
+# Create a Cloud Storage bucket
+gsutil mb -l $region $bucket
+
+# Create a directory for the Cloud Function and move into it
+mkdir ~/$function_name && cd $_
+touch index.js package.json
+
+# Create the index.js file for the Cloud Function
+cat > index.js <<EOF
+const functions = require('@google-cloud/functions-framework');
+functions.cloudEvent('$function_name', (cloudevent) => {
+  console.log('A new event in your Cloud Storage bucket has been logged!');
+  console.log(cloudevent);
+});
+EOF
+
+# Create the package.json file for the Cloud Function
+cat > package.json <<EOF
+{
+  "name": "nodejs-functions-gen2-codelab",
+  "version": "0.0.1",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^2.0.0"
+  }
+}
+EOF
+
+# Function to deploy the Cloud Function
+deploy_function() {
+  gcloud functions deploy $function_name \
+    --gen2 \
+    --runtime nodejs16 \
+    --entry-point $function_name \
+    --source . \
+    --region $region \
+    --trigger-bucket $bucket \
+    --trigger-location $region \
+    --max-instances 2 \
+    --quiet
+}
+
+# Loop until the Cloud Run service is created
+while true; do
+  # Run the deployment command
+  deploy_function
+
+  # Check if Cloud Run service is created
+  if gcloud run services describe $function_name --region $region &> /dev/null; then
+    break
+  else
+    # Wait before checking again
+    sleep 10
+  fi
+done
+
+# Move to the parent directory
+cd ..
+
+# Create a directory for the HTTP Cloud Function and move into it
+mkdir ~/$http_function && cd $_
+touch index.js package.json
+
+# Create the index.js file for the HTTP Cloud Function
+cat > index.js <<EOF
+const functions = require('@google-cloud/functions-framework');
+functions.http('$http_function', (req, res) => {
+  res.status(200).send('awesome lab');
+});
+EOF
+
+# Create the package.json file for the HTTP Cloud Function
+cat > package.json <<EOF
+{
+  "name": "nodejs-functions-gen2-codelab",
+  "version": "0.0.1",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^2.0.0"
+  }
+}
+EOF
+
+# Function to deploy the HTTP Cloud Function
+deploy_http_function() {
+  gcloud functions deploy $http_function \
+    --gen2 \
+    --runtime nodejs16 \
+    --entry-point $http_function \
+    --source . \
+    --region $region \
+    --trigger-http \
+    --timeout 600s \
+    --max-instances 2 \
+    --min-instances 1 \
+    --quiet
+}
+
+# Loop until the Cloud Run service is created
+while true; do
+  # Run the deployment command
+  deploy_http_function
+
+  # Check if Cloud Run service is created
+  if gcloud run services describe $http_function --region $region &> /dev/null; then
+    break
+  else
+    # Wait before checking again
+    sleep 10
+  fi
+done
