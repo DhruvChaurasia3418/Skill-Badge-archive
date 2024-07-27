@@ -17,11 +17,11 @@ gcloud services enable eventarc.googleapis.com \
     cloudbuild.googleapis.com
 
 # Task 1: Create a Pub/Sub topic
-gcloud pubsub topics create qwiklabs-gcp-02-af51001ea89d-topic
+gcloud pubsub topics create $project-topic
 
 # Create a subscription for the Pub/Sub topic
-gcloud pubsub subscriptions create qwiklabs-gcp-02-af51001ea89d-topic-sub \
-    --topic=qwiklabs-gcp-02-af51001ea89d-topic
+gcloud pubsub subscriptions create $project-topic-sub \
+    --topic=$project-topic
 
 # Task 2: Create a Cloud Run sink
 export SERVICE_NAME=pubsub-events
@@ -34,7 +34,7 @@ gcloud run deploy $SERVICE_NAME \
   --max-instances=3
 
 # Task 3: Create and test a Pub/Sub event trigger using Eventarc
-export TOPIC_NAME=qwiklabs-gcp-02-af51001ea89d-topic
+export TOPIC_NAME=$project-topic
 export TRIGGER_NAME=pubsub-events-trigger
 
 gcloud eventarc triggers create $TRIGGER_NAME \
