@@ -1,0 +1,50 @@
+
+export project=
+
+
+
+export region=
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+gcloud config set project $project
+
+# Ensure necessary APIs are enabled
+gcloud services enable eventarc.googleapis.com \
+    pubsub.googleapis.com \
+    run.googleapis.com \
+    logging.googleapis.com \
+    cloudbuild.googleapis.com
+
+# Task 1: Create a Pub/Sub topic
+gcloud pubsub topics create qwiklabs-gcp-02-af51001ea89d-topic
+
+# Create a subscription for the Pub/Sub topic
+gcloud pubsub subscriptions create qwiklabs-gcp-02-af51001ea89d-topic-sub \
+    --topic=qwiklabs-gcp-02-af51001ea89d-topic
+
+# Task 2: Create a Cloud Run sink
+export SERVICE_NAME=pubsub-events
+export IMAGE_NAME="gcr.io/cloudrun/hello"
+
+gcloud run deploy $SERVICE_NAME \
+  --image $IMAGE_NAME \
+  --region $region \
+  --allow-unauthenticated \
+  --max-instances=3
+
+# Task 3: Create and test a Pub/Sub event trigger using Eventarc
+export TOPIC_NAME=qwiklabs-gcp-02-af51001ea89d-topic
+export TRIGGER_NAME=pubsub-events-trigger
+
+gcloud eventarc triggers create $TRIGGER_NAME \
+  --destination-run-service=$SERVICE_NAME \
+  --location=$region \
+  --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished" \
+  --transport-topic=$TOPIC_NAME
+
+# Test the Pub/Sub event trigger by publishing a message to the Pub/Sub topic
+gcloud pubsub topics publish $TOPIC_NAME --message="Hello there"
+
+# Check if the message has been received by the Cloud Run service
+gcloud eventarc triggers list
