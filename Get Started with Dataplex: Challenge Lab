@@ -1,0 +1,38 @@
+export region=
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+# Define the environment variable for the project ID
+export ID=$DEVSHELL_PROJECT_ID
+
+# Enable the Data Catalog API
+gcloud services enable datacatalog.googleapis.com
+
+# Enable the Dataplex API
+gcloud services enable dataplex.googleapis.com
+
+# Create a Dataplex lake named 'customer-engagements' in the specified region
+gcloud dataplex lakes create customer-engagements \
+   --location=$region \
+   --display-name="Customer Engagements"
+
+# Create a Dataplex zone named 'raw-event-data' within the 'customer-engagements' lake
+gcloud dataplex zones create raw-event-data \
+    --location=$region \
+    --lake=customer-engagements \
+    --display-name="Raw Event Data" \
+    --type=RAW \
+    --resource-location-type=SINGLE_REGION \
+    --discovery-enabled
+
+# Create a Cloud Storage bucket in the specified region with the project ID as the bucket name
+gsutil mb -p $ID -c REGIONAL -l $region gs://$ID
+
+# Create a Dataplex asset named 'raw-event-files' in the 'raw-event-data' zone and link it to the Cloud Storage bucket
+gcloud dataplex assets create raw-event-files \
+  --location=$region \
+  --lake=customer-engagements \
+  --zone=raw-event-data \
+  --display-name="Raw Event Files" \
+  --resource-type=STORAGE_BUCKET \
+  --resource-name=projects/my-project/buckets/${ID}
+
