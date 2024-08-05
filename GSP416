@@ -1,0 +1,103 @@
+
+
+# Set the project ID
+export PROJECT_ID=$(gcloud config get-value project)
+
+# Task 1: Create a dataset and table
+bq mk $PROJECT_ID:fruit_store
+bq mk --table --description "Table for fruit details" $PROJECT_ID:fruit_store.fruit_details
+bq load --source_format=NEWLINE_DELIMITED_JSON --autodetect $PROJECT_ID:fruit_store.fruit_details gs://data-insights-course/labs/optimizing-for-performance/shopping_cart.json
+
+# Task 2: Run a query with arrays
+bq query --use_legacy_sql=false \
+"
+SELECT
+  fullVisitorId,
+  date,
+  ARRAY_AGG(DISTINCT v2ProductName) AS products_viewed,
+  ARRAY_LENGTH(ARRAY_AGG(DISTINCT v2ProductName)) AS distinct_products_viewed,
+  ARRAY_AGG(DISTINCT pageTitle) AS pages_viewed,
+  ARRAY_LENGTH(ARRAY_AGG(DISTINCT pageTitle)) AS distinct_pages_viewed
+FROM \`data-to-insights.ecommerce.all_sessions\`
+WHERE visitId = 1501570398
+GROUP BY fullVisitorId, date
+ORDER BY date;
+"
+
+# Task 3: Query tables containing arrays
+bq query --use_legacy_sql=false \
+"
+SELECT DISTINCT
+  visitId,
+  h.page.pageTitle
+FROM \`bigquery-public-data.google_analytics_sample.ga_sessions_20170801\`,
+UNNEST(hits) AS h
+WHERE visitId = 1501570398
+LIMIT 10;
+"
+
+# Task 4: Create schema for a new table
+echo '[
+    {
+        "name": "race",
+        "type": "STRING",
+        "mode": "NULLABLE"
+    },
+    {
+        "name": "participants",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+            {
+                "name": "name",
+                "type": "STRING",
+                "mode": "NULLABLE"
+            },
+            {
+                "name": "splits",
+                "type": "FLOAT",
+                "mode": "REPEATED"
+            }
+        ]
+    }
+]' > schema.json
+
+bq mk $PROJECT_ID:racing
+bq mk --table --schema=schema.json --description "Table for race details" $PROJECT_ID:racing.race_results
+bq load --source_format=NEWLINE_DELIMITED_JSON --schema=schema.json $PROJECT_ID:racing.race_results gs://data-insights-course/labs/optimizing-for-performance/race_results.json
+
+# Task 5: Practice with STRUCTs and arrays
+bq query --use_legacy_sql=false \
+"
+#standardSQL
+SELECT COUNT(p.name) AS racer_count
+FROM \`$PROJECT_ID.racing.race_results\` AS r, UNNEST(r.participants) AS p;
+"
+
+# Task 6: Unpacking arrays with UNNEST()
+bq query --use_legacy_sql=false \
+"
+#standardSQL
+SELECT
+  p.name,
+  SUM(split_times) as total_race_time
+FROM \`$PROJECT_ID.racing.race_results\` AS r
+, UNNEST(r.participants) AS p
+, UNNEST(p.splits) AS split_times
+WHERE p.name LIKE 'R%'
+GROUP BY p.name
+ORDER BY total_race_time ASC;
+"
+
+# Task 7: Find specific split time
+bq query --use_legacy_sql=false \
+"
+#standardSQL
+SELECT
+  p.name,
+  split_time
+FROM \`$PROJECT_ID.racing.race_results\` AS r
+, UNNEST(r.participants) AS p
+, UNNEST(p.splits) AS split_time
+WHERE split_time = 23.2;
+"
