@@ -1,0 +1,44 @@
+
+# Set environment variables
+
+export REGION=<YOUR_REGION>    
+export ZONE=<YOUR_ZONE> 
+
+------------------------------------------------------------------------------------------------------------------------------------------------
+export PROJECT_ID=$(gcloud config get-value project)       
+export MY_BUCKET=$(gcloud config get-value project)
+
+# Task 1: Create a Cloud Storage bucket
+gsutil mb -l $REGION gs://$MY_BUCKET
+
+# Task 2: Copy script files to Cloud Storage bucket
+gsutil cp -r gs://spls/gsp087/* gs://$MY_BUCKET
+
+# Task 3: Create an instance template
+gcloud compute instance-templates create autoscaling-instance01 \
+    --region=$REGION \
+    --metadata=startup-script-url=gs://$MY_BUCKET/startup.sh,gcs-bucket=gs://$MY_BUCKET \
+    --machine-type=e2-medium
+
+# Task 4: Create an instance group
+gcloud compute instance-groups managed create autoscaling-instance-group-1 \
+    --base-instance-name=autoscaling-instance \
+    --template=autoscaling-instance01 \
+    --size=1 \
+    --zone=$ZONE \
+    --initial-delay=300
+
+# Task 5: Verifying the instance group has been created
+gcloud compute instance-groups managed list-instances autoscaling-instance-group-1 --zone=$ZONE
+
+# Task 6: Verifying the Node.js script is running
+INSTANCE_NAME=$(gcloud compute instance-groups managed list-instances autoscaling-instance-group-1 --zone=$ZONE --format="value(instance)")
+gcloud compute instances tail-serial-port-output $INSTANCE_NAME --zone=$ZONE --port=1
+
+# Task 7: Configure autoscaling for the instance group
+gcloud compute instance-groups managed set-autoscaling autoscaling-instance-group-1 \
+    --zone=$ZONE \
+    --cool-down-period=60 \
+    --max-num-replicas=3 \
+    --min-num-replicas=1 \
+    --custom-metric-utilization metric=custom.googleapis.com/appdemo_queue_depth_01,utilization-target=150,utilization-target-type=GAUGE
