@@ -132,3 +132,15 @@ curl -s -X POST \
   -d "{\"q\": [\"$decoded_sentence\"]}" \
   "https://translation.googleapis.com/language/translate/v2/detect?key=${API_KEY}" \
   -o "$task5_2"
+
+curl -s -X POST \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d "{
+        'q': '${task4_1}',
+        'target': 'en',
+        'format': 'text'
+      }" \
+  "https://translation.googleapis.com/language/translate/v2" \
+  -o "$task4_2"
+
