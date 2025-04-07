@@ -1,66 +1,51 @@
 # Set the region environment variable
 export REGION=
 
-# List authenticated gcloud accounts
-gcloud auth list
+--------------------------------------------------------------------------------------------------------------------------------------------------
 
-# Set the project ID environment variable
 export PROJECT_ID=$(gcloud config get-value project)
-
-# Set the compute region
-gcloud config set compute/region $REGION
-
-# Enable the API Gateway service for the project
 gcloud services enable apigateway.googleapis.com --project $DEVSHELL_PROJECT_ID
+gcloud services enable run.googleapis.com
 
-# Wait for 15 seconds to ensure the service is enabled
 sleep 15
 
-# Get the project number and set it as an environment variable
 export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 
-# Add IAM policy binding for Service Usage Admin role to the compute service account
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/serviceusage.serviceUsageAdmin"
 
-# Add IAM policy binding for Artifact Registry Reader role to the compute service account
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/artifactregistry.reader"
 
-# Clone the sample Node.js repository
-git clone https://github.com/GoogleCloudPlatform/nodejs-docs-samples.git
+sleep 30
 
-# Change directory to the sample function directory
+git clone https://github.com/GoogleCloudPlatform/nodejs-docs-samples.git
 cd nodejs-docs-samples/functions/helloworld/helloworldGet
 
-# Deploy the Cloud Function and allow unauthenticated access
+sleep 60
+
 deploy_function() {
-  gcloud functions deploy helloGET --runtime nodejs14 --trigger-http --allow-unauthenticated --region $REGION
+  gcloud functions deploy helloGET \
+    --runtime nodejs20 \
+    --region $REGION \
+    --trigger-http \
+    --allow-unauthenticated
 }
 
-# Loop to ensure the function is deployed successfully
 deploy_success=false
 
 while [ "$deploy_success" = false ]; do
   if deploy_function; then
-    echo "Function deployed successfully."
     deploy_success=true
   else
-    echo ""
-    sleep 30
+    sleep 60
   fi
 done
 
-# Describe the deployed function to verify deployment
 gcloud functions describe helloGET --region $REGION
-
-# Test the deployed function using curl
 curl -v https://$REGION-$PROJECT_ID.cloudfunctions.net/helloGET
 
-# Return to the home directory
 cd ~
 
-# Create the OpenAPI specification for the API Gateway
 cat > openapi2-functions.yaml <<EOF_CP
-# openapi2-functions.yaml
 swagger: '2.0'
 info:
   title: API_ID description
@@ -76,7 +61,7 @@ paths:
       summary: Greet a user
       operationId: hello
       x-google-backend:
-        address: https://$REGION-$PROJECT_ID.cloudfunctions.net/helloGET
+        address: https://us-east4-qwiklabs-gcp-01-b47a65687b9f.cloudfunctions.net/helloGET
       responses:
        '200':
           description: A successful response
@@ -84,48 +69,27 @@ paths:
             type: string
 EOF_CP
 
-# Generate a random API ID and set it as an environment variable
 export API_ID="hello-world-$(cat /dev/urandom | tr -dc 'a-z' | fold -w ${1:-8} | head -n 1)"
 
-# Replace placeholders in the OpenAPI specification
 sed -i "s/API_ID/${API_ID}/g" openapi2-functions.yaml
 sed -i "s/PROJECT_ID/$PROJECT_ID/g" openapi2-functions.yaml
 
-# Generate another random API ID
-export API_ID="hello-world-$(cat /dev/urandom | tr -dc 'a-z' | fold -w ${1:-8} | head -n 1)"
-echo $API_ID
+gcloud api-gateway apis create "hello-world-api"  --project=$PROJECT_ID
 
-# Create the API Gateway API
-gcloud api-gateway apis create "hello-world-api" --project=$PROJECT_ID
-
-# Create the API Gateway configuration
 gcloud api-gateway api-configs create hello-world-config --project=$PROJECT_ID --api=$API_ID --openapi-spec=openapi2-functions.yaml --backend-auth-service-account=$PROJECT_NUMBER-compute@developer.gserviceaccount.com
 
-# Create the API Gateway
 gcloud api-gateway gateways create hello-gateway --location=$REGION --project=$PROJECT_ID --api=$API_ID --api-config=hello-world-config
 
-# Create an API key with the display name "hii"
-gcloud alpha services api-keys create --display-name="hii"
+gcloud alpha services api-keys create --display-name="awesome"  
 
-# Get the API key name and set it as an environment variable
-KEY_NAME=$(gcloud alpha services api-keys list --format="value(name)" --filter "displayName=hii")
+KEY_NAME=$(gcloud alpha services api-keys list --format="value(name)" --filter "displayName=awesome") 
+export API_KEY=$(gcloud alpha services api-keys get-key-string $KEY_NAME --format="value(keyString)") 
 
-# Get the API key string and set it as an environment variable
-export API_KEY=$(gcloud alpha services api-keys get-key-string $KEY_NAME --format="value(keyString)")
-
-# Print the API key
-echo $API_KEY
-
-# Get the managed service name and set it as an environment variable
 MANAGED_SERVICE=$(gcloud api-gateway apis list --format json | jq -r .[0].managedService | cut -d'/' -f6)
-echo $MANAGED_SERVICE
 
-# Enable the managed service
 gcloud services enable $MANAGED_SERVICE
 
-# Create the second OpenAPI specification for the API Gateway with security definitions
 cat > openapi2-functions2.yaml <<EOF_CP
-# openapi2-functions.yaml
 swagger: '2.0'
 info:
   title: API_ID description
@@ -156,34 +120,24 @@ securityDefinitions:
     in: "query"
 EOF_CP
 
-# Replace placeholders in the second OpenAPI specification
 sed -i "s/API_ID/${API_ID}/g" openapi2-functions2.yaml
 sed -i "s/PROJECT_ID/$PROJECT_ID/g" openapi2-functions2.yaml
 
-# Create the API Gateway configuration with the second OpenAPI specification
-gcloud api-gateway api-configs create hello-config --project=$PROJECT_ID --display-name="Hello Config" --api=$API_ID --openapi-spec=openapi2-functions2.yaml --backend-auth-service-account=$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com
+gcloud api-gateway api-configs create hello-config --project=$PROJECT_ID \
+  --display-name="Hello Config" --api=$API_ID --openapi-spec=openapi2-functions2.yaml \
+  --backend-auth-service-account=$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com	
 
-# Update the API Gateway to use the new configuration
 gcloud api-gateway gateways update hello-gateway --location=$REGION --project=$PROJECT_ID --api=$API_ID --api-config=hello-config
 
-# Add IAM policy binding for Service Usage Admin role to the service account
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$PROJECT_ID@$PROJECT_ID.iam.gserviceaccount.com" --role="roles/serviceusage.serviceUsageAdmin"
 
-# Add IAM policy binding for Service Usage Admin role to the compute service account
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" --role="roles/serviceusage.serviceUsageAdmin"
 
-# Get the managed service name for the specific API ID and set it as an environment variable
 MANAGED_SERVICE=$(gcloud api-gateway apis list --format json | jq -r --arg api_id "$API_ID" '.[] | select(.name | endswith($api_id)) | .managedService' | cut -d'/' -f6)
-echo $MANAGED_SERVICE
 
-# Enable the managed service
 gcloud services enable $MANAGED_SERVICE
 
-# Get the API Gateway URL and set it as an environment variable
 export GATEWAY_URL=$(gcloud api-gateway gateways describe hello-gateway --location $REGION --format json | jq -r .defaultHostname)
 
-# Test the API Gateway endpoint
 curl -sL $GATEWAY_URL/hello
-
-# Test the API Gateway endpoint with the API key
 curl -sL -w "\n" $GATEWAY_URL/hello?key=$API_KEY
